@@ -17,6 +17,7 @@ type ResponseType = {
   code: number | null;
   body: string;
   ok: boolean;
+  time: number | null;
 };
 const RequestPane = () => {
   const [requests, setRequests] = useState<Request[]>([]);
@@ -28,6 +29,7 @@ const RequestPane = () => {
     code: null,
     body: "",
     ok: false,
+    time: null,
   });
   const { db } = useDBContext();
 
@@ -138,6 +140,8 @@ const RequestPane = () => {
   };
 
   const makeRequest = async () => {
+    const time = Date.now();
+
     try {
       const url = requests[currentRequest].url;
 
@@ -151,10 +155,16 @@ const RequestPane = () => {
         code: res.status,
         body: JSON.stringify(json, undefined, 2),
         ok: res.ok,
+        time: Date.now() - time,
       });
     } catch (e) {
       const err: any = e;
-      setResponse({ code: err.code, body: err.message, ok: false });
+      setResponse({
+        code: err.code || 500,
+        body: err.message || "Unknown Error",
+        ok: false,
+        time: Date.now() - time,
+      });
     }
   };
   useEffect(() => {
@@ -258,13 +268,18 @@ const RequestPane = () => {
                 <p className="p-2 text-2xl font-bold">Response</p>
                 {response.code !== null && (
                   <>
-                    <div className="flex flex-row">
+                    <div className="flex flex-row gap-2">
                       <div
                         className={`p-4 text-white text-lg font-bold ${
                           response.ok ? "bg-green-500" : "bg-red-500"
                         }`}
                       >
                         {response.code}
+                      </div>
+                      <div
+                        className={`p-4 text-white text-lg font-bold bg-gray-400`}
+                      >
+                        {response.time}ms
                       </div>
                     </div>
                     <div
