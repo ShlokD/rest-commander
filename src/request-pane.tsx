@@ -31,6 +31,7 @@ const RequestPane = () => {
     ok: false,
     time: null,
   });
+  const [requestText, setRequestText] = useState("{}");
   const { db } = useDBContext();
 
   const loadRequestsFromDB = async () => {
@@ -42,7 +43,8 @@ const RequestPane = () => {
       setRequests(rawRequests);
       setRequestState(new Array(rawRequests.length).fill({ isEdit: false }));
       setCurrentRequest(0);
-    } catch (e) {
+    }
+    catch (e) {
       setRequests(requests);
     }
   };
@@ -68,21 +70,21 @@ const RequestPane = () => {
 
   const handleClick = (index: number, detail: number) => {
     switch (detail) {
-      case 1: {
-        setCurrentRequest(index);
-        break;
-      }
-      case 2: {
-        setRequestState((prev) => {
-          const newState = prev.slice();
-          newState[index] = { ...newState[index], isEdit: true };
-          return newState;
-        });
-        break;
-      }
-      default: {
-        break;
-      }
+    case 1: {
+      setCurrentRequest(index);
+      break;
+    }
+    case 2: {
+      setRequestState((prev) => {
+        const newState = prev.slice();
+        newState[index] = { ...newState[index], isEdit: true };
+        return newState;
+      });
+      break;
+    }
+    default: {
+      break;
+    }
     }
   };
 
@@ -140,14 +142,36 @@ const RequestPane = () => {
   };
 
   const makeRequest = async () => {
+    const method = requests[currentRequest].type;
+    const isPost = method === "POST" || method === "PUT";
+    if (isPost) {
+      try {
+        JSON.parse(requestText);
+      }
+      catch (e) {
+        setResponse({
+          code: 403,
+          body: "Invalid body",
+          ok: false,
+          time: null,
+        });
+        return;
+      }
+    }
     const time = Date.now();
 
     try {
       const url = requests[currentRequest].url;
 
-      const options = {
-        method: requests[currentRequest].type,
+      const options: RequestInit = {
+        method,
       };
+      if (isPost) {
+        options.body = requestText;
+        options.headers = {
+          "content-type": "application/json",
+        };
+      }
 
       const res = await fetch(url, options);
       const json = await res.json();
@@ -157,7 +181,8 @@ const RequestPane = () => {
         ok: res.ok,
         time: Date.now() - time,
       });
-    } catch (e) {
+    }
+    catch (e) {
       const err: any = e;
       setResponse({
         code: err.code || 500,
@@ -257,7 +282,10 @@ const RequestPane = () => {
                 <textarea
                   style={{ minHeight: "80vh" }}
                   className="text-2xl text-white bg-gray-700 border-2 p-2"
-                  value={""}
+                  value={requestText}
+                  onChange={(ev) =>
+                    setRequestText((ev?.target as HTMLTextAreaElement)?.value)
+                  }
                   disabled={current?.type !== "POST" && current.type !== "PUT"}
                 />
               </div>
@@ -277,13 +305,15 @@ const RequestPane = () => {
                         {response.code}
                       </div>
                       <div
-                        className={`p-4 text-white text-lg font-bold bg-gray-400`}
+                        className={
+                          "p-4 text-white text-lg font-bold bg-gray-400"
+                        }
                       >
                         {response.time}ms
                       </div>
                     </div>
                     <div
-                      className="bg-gray-700 text-white my-2"
+                      className="bg-gray-700 text-white my-2 overflow-scroll"
                       style={{ minHeight: "80vh" }}
                     >
                       <pre className="text-sm" wrap="2">
