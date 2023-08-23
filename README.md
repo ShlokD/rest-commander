@@ -1,3 +1,5 @@
-# Flighty Mango
+# Rest Commander
 
-Preact + Vite + Eslint + Prettier + TailwindCSS
+Web Based Rest Client
+
+Demo: https://rest-commander.surge.sh/
