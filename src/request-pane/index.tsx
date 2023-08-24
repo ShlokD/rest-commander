@@ -1,24 +1,10 @@
 import { useState, useEffect } from "preact/hooks";
-import { useDBContext } from "./db-context";
+import { useDBContext } from "../db-context";
 import { ulid } from "ulid";
+import RequestInput from "./request-input";
+import SavedRequestsList from "./saved-requests-list";
+import type { ResponseType, Request, RequestState } from "../types";
 
-type Request = {
-  id: string;
-  type: string;
-  url: string;
-  title: string;
-};
-
-type RequestState = {
-  isEdit: boolean;
-};
-
-type ResponseType = {
-  code: number | null;
-  body: string;
-  ok: boolean;
-  time: number | null;
-};
 const RequestPane = () => {
   const [requests, setRequests] = useState<Request[]>([]);
   const [requestState, setRequestState] = useState<RequestState[]>(
@@ -30,8 +16,12 @@ const RequestPane = () => {
     body: "",
     ok: false,
     time: null,
+    headers: null,
   });
   const [requestText, setRequestText] = useState("{}");
+  const [headersText, setHeadersText] = useState("{}");
+  const [showHeaders, setShowHeaders] = useState(false);
+
   const { db } = useDBContext();
 
   const loadRequestsFromDB = async () => {
@@ -150,10 +140,11 @@ const RequestPane = () => {
       }
       catch (e) {
         setResponse({
-          code: 403,
-          body: "Invalid body",
+          code: 400,
+          body: "Bad Request",
           ok: false,
           time: null,
+          headers: null,
         });
         return;
       }
@@ -173,13 +164,27 @@ const RequestPane = () => {
         };
       }
 
+      if (headersText) {
+        try {
+          const requestHeaders = JSON.parse(headersText);
+          options.headers = {
+            ...options.headers,
+            ...requestHeaders,
+          };
+        }
+        catch (e) {}
+      }
+
       const res = await fetch(url, options);
       const json = await res.json();
+      const headers = Object.fromEntries(res.headers.entries());
+
       setResponse({
         code: res.status,
         body: JSON.stringify(json, undefined, 2),
         ok: res.ok,
         time: Date.now() - time,
+        headers: JSON.stringify(headers, undefined, 2),
       });
     }
     catch (e) {
@@ -189,6 +194,7 @@ const RequestPane = () => {
         body: err.message || "Unknown Error",
         ok: false,
         time: Date.now() - time,
+        headers: null,
       });
     }
   };
@@ -212,32 +218,14 @@ const RequestPane = () => {
           New
         </button>
 
-        {requests.map((request, i) => {
-          const isEdit = requestState[i].isEdit;
-          return isEdit ? (
-            <input
-              className="w-full text-3xl my-2 p-4 font-bold text-left bg-gray-700"
-              value={request.title}
-              onChange={(ev) =>
-                handleTitleChange(i, (ev.target as HTMLInputElement)?.value)
-              }
-              onBlur={() => saveTitle(i)}
-            />
-          ) : (
-            <button
-              key={`request-option-${i}`}
-              className={`w-full text-3xl my-2 p-4 font-bold text-left touch-events-all ${
-                i === currentRequest ? "text-gray-100" : ""
-              }`}
-              onClick={(ev) => {
-                handleClick(i, ev.detail);
-              }}
-              title="Double Click to Edit"
-            >
-              {request.title}
-            </button>
-          );
-        })}
+        <SavedRequestsList
+          requests={requests}
+          requestState={requestState}
+          currentRequest={currentRequest}
+          handleClick={handleClick}
+          saveTitle={saveTitle}
+          handleTitleChange={handleTitleChange}
+        />
       </div>
       <div
         className="lg:w-4/5 w-full bg-gray-800 rounded-lg p-2"
@@ -245,49 +233,61 @@ const RequestPane = () => {
       >
         {current && (
           <div className="flex flex-col gap-2">
-            <div className="flex flex-row gap-2">
-              <select
-                className="text-3xl bg-gray-700 p-2 w-2/12 font-bold text-white rounded-lg"
-                value={current.type}
-                onChange={(ev) =>
-                  setRequestType((ev.target as HTMLSelectElement)?.value)
-                }
-              >
-                <option value="GET">GET</option>
-                <option value="POST">POST</option>
-                <option value="PUT">PUT</option>
-                <option value="DELETE">DELETE</option>
-              </select>
-              <input
-                className="text-xl bg-gray-700 p-2 w-8/12 font-bold text-white rounded-lg"
-                value={current.url}
-                onChange={(ev) =>
-                  setRequestUrl((ev?.target as HTMLInputElement)?.value)
-                }
-              />
-              <button
-                onClick={makeRequest}
-                className="text-xl font-bold text-white rounded-lg text-center w-2/12 bg-blue-400"
-              >
-                Send
-              </button>
-            </div>
+            <RequestInput
+              current={current}
+              makeRequest={makeRequest}
+              setRequestUrl={setRequestUrl}
+              setRequestType={setRequestType}
+            />
             <div className="flex flex-row gap-2 items-stretch">
               <div
                 className="flex flex-col w-1/2 h-full gap-2"
                 style={{ minHeight: "80vh" }}
               >
-                <p className="p-2 text-2xl font-bold">Request Body</p>
-                <div className="py-8 w-full" />
-                <textarea
-                  style={{ minHeight: "80vh" }}
-                  className="text-2xl text-white bg-gray-700 border-2 p-2"
-                  value={requestText}
-                  onChange={(ev) =>
-                    setRequestText((ev?.target as HTMLTextAreaElement)?.value)
-                  }
-                  disabled={current?.type !== "POST" && current.type !== "PUT"}
-                />
+                <p className="p-2 text-2xl font-bold">{`Request ${
+                  showHeaders ? "Headers" : "Body"
+                }`}</p>
+                <div className="py-8 w-full">
+                  <label
+                    htmlFor="toggle-headers"
+                    className={`${
+                      showHeaders ? "bg-green-400" : "bg-black"
+                    } border-2 border-black rounded-lg font-bold text-white p-2`}
+                  >
+                    Show Headers
+                  </label>
+                  <input
+                    id="toggle-headers"
+                    type="checkbox"
+                    className="hidden"
+                    defaultChecked={showHeaders}
+                    onChange={() => setShowHeaders((prev) => !prev)}
+                  />
+                </div>
+                {showHeaders ? (
+                  <textarea
+                    style={{ minHeight: "80vh" }}
+                    aria-label="Enter headers"
+                    className="text-2xl text-white bg-gray-700 border-2 p-2"
+                    value={headersText}
+                    onChange={(ev) =>
+                      setHeadersText((ev?.target as HTMLTextAreaElement)?.value)
+                    }
+                  />
+                ) : (
+                  <textarea
+                    style={{ minHeight: "80vh" }}
+                    aria-label="Enter request body"
+                    className="text-2xl text-white bg-gray-700 border-2 p-2"
+                    value={requestText}
+                    onChange={(ev) =>
+                      setRequestText((ev?.target as HTMLTextAreaElement)?.value)
+                    }
+                    disabled={
+                      current?.type !== "POST" && current.type !== "PUT"
+                    }
+                  />
+                )}
               </div>
               <div
                 className="flex flex-col w-1/2 h-full gap-2 "
@@ -299,19 +299,25 @@ const RequestPane = () => {
                     <div className="flex flex-row gap-2">
                       <div
                         className={`p-4 text-white text-lg font-bold ${
-                          response.ok ? "bg-green-500" : "bg-red-500"
+                          response.ok ? "bg-green-700" : "bg-red-500"
                         }`}
                       >
                         {response.code}
                       </div>
                       <div
                         className={
-                          "p-4 text-white text-lg font-bold bg-gray-400"
+                          "p-4 text-white text-lg font-bold bg-gray-900"
                         }
                       >
                         {response.time}ms
                       </div>
                     </div>
+                    {response.headers && (
+                      <details className="p-2 text-white">
+                        <summary>Headers</summary>
+                        {response.headers}
+                      </details>
+                    )}
                     <div
                       className="bg-gray-700 text-white my-2 overflow-scroll"
                       style={{ minHeight: "80vh" }}
